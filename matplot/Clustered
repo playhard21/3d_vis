@@ -1,0 +1,120 @@
+import json
+import matplotlib.pyplot as plt
+import numpy as np
+from mpl_toolkits.mplot3d import Axes3D
+from sklearn.cluster import KMeans
+import matplotlib
+
+# Set interactive backend for PyCharm (this enables rotation)
+matplotlib.use('Qt5Agg')
+
+# Function to load the transformed JSON data
+def load_transformed_json(file_path):
+    with open(file_path, 'r') as f:
+        return json.load(f)
+
+# Load the transformed data
+data_list = load_transformed_json('C:/Users/Gassmann/PycharmProjects/3d_vis/matplot/transformed_data.json')
+
+# Extract and prepare data for plotting
+lats = np.array([data['LAT'] for data in data_list])
+longs = np.array([data['LONG'] for data in data_list])
+elevations = np.array([data['Elevation_masl'] for data in data_list])
+well_depths = np.array([data['Well_depth_m_bgl'] for data in data_list])
+depths = elevations - well_depths  # Calculate depth
+
+# K-means clustering for well depths
+kmeans = KMeans(n_clusters=3, random_state=0)
+clusters = kmeans.fit_predict(depths.reshape(-1, 1))
+
+# Map cluster labels to A, B, and C
+cluster_labels = {0: 'A', 1: 'B', 2: 'C'}
+well_clusters = [cluster_labels[label] for label in clusters]
+
+# Colors for clusters
+cluster_colors = {'A': 'red', 'B': 'blue', 'C': 'green'}
+
+# Helper function to plot a circle (ring) at a specific depth
+def plot_circle(ax, lon, lat, depth, radius, color, label=''):
+    # Define circle parameters
+    theta = np.linspace(0, 2 * np.pi, 100)
+    x = lon + radius * np.cos(theta)
+    y = lat + radius * np.sin(theta)
+    z = np.full_like(x, depth)
+    ax.plot(x, y, z, color=color, label=label)
+
+# Function to plot wells for a given cluster
+def plot_cluster(cluster_label):
+    # Create a new figure for 3D plotting
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot wells only for the specified cluster
+    for i in range(len(data_list)):
+        # Check if well belongs to the current cluster
+        if well_clusters[i] != cluster_label:
+            continue
+
+        # Extract current well data
+        lat = lats[i]
+        lon = longs[i]
+        elevation = elevations[i]
+        depth = depths[i]
+        casing_depth = elevations[i] - data_list[i]['Casing_end_m_bgl'] if data_list[i]['Casing_end_m_bgl'] is not None else elevation
+        swl16 = elevations[i] - data_list[i]['SWL_2016_mbgl'] if data_list[i]['SWL_2016_mbgl'] is not None else elevation
+        swl17 = elevations[i] - data_list[i]['SWL_2017_m_bgl'] if data_list[i]['SWL_2017_m_bgl'] is not None else elevation
+
+        # Plot the "pipe" from elevation to depth
+        ax.plot([lon, lon], [lat, lat], [elevation, depth], color=cluster_colors[cluster_label], linestyle='-', linewidth=4)
+
+        # Plot casing depth as a line within the pipe
+        ax.plot([lon, lon], [lat, lat], [elevation, casing_depth], color='black', linestyle='-', linewidth=2, label='Casing Depth' if i == 0 else "")
+
+        # Plot SWL 2016 and SWL 2017 as circles within the well cylinder
+        plot_circle(ax, lon, lat, swl16, 0.0002, 'blue', 'SWL 2016' if i == 0 else "")
+        plot_circle(ax, lon, lat, swl17, 0.0002, 'darkblue', 'SWL 2017' if i == 0 else "")
+
+        # Plot dry fractures as brown circles within the pipe
+        for j, fracture_depth in enumerate(data_list[i]['Dry_Fractures']):
+            fracture_elevation = elevation - fracture_depth
+            plot_circle(ax, lon, lat, fracture_elevation, 0.0002, 'brown', 'Dry Fractures' if i == 0 and j == 0 else "")
+
+        # Plot yielding fractures as green circles within the pipe
+        for j, fracture_depth in enumerate(data_list[i]['Yielding_Fractures']):
+            fracture_elevation = elevation - fracture_depth
+            plot_circle(ax, lon, lat, fracture_elevation, 0.0002, 'green', 'Yielding Fractures' if i == 0 and j == 0 else "")
+
+    # Set labels
+    ax.set_xlabel('Longitude')
+    ax.set_ylabel('Latitude')
+    ax.set_zlabel('Meters')
+    ax.set_title(f'3D Borewell Profile - Cluster {cluster_label}')
+
+    # Invert the Z-axis to flip the borewell depth visualization
+    ax.invert_zaxis()
+
+    # Reduce the number of latitude and longitude ticks (markers)
+    ax.set_xticks(np.linspace(min(longs), max(longs), 5))  # Fewer longitude markers
+    ax.set_yticks(np.linspace(min(lats), max(lats), 5))    # Fewer latitude markers
+
+    # Remove the grid for cleaner visual output
+    ax.grid(False)
+
+    # Set axis limits to make the plot look cubic
+    ax.set_xlim(min(longs), max(longs))
+    ax.set_ylim(min(lats), max(lats))
+    ax.set_zlim(min(depths), max(elevations))
+
+    # Set initial viewing angle
+    ax.view_init(elev=30, azim=120)
+
+    # Add a legend
+    ax.legend()
+
+    # Show plot with interactive rotation enabled
+    plt.show()
+
+# Plot each cluster individually
+plot_cluster('A')
+plot_cluster('B')
+plot_cluster('C')
