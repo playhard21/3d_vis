@@ -5,7 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 import matplotlib
 
-# Set backend for PyCharm (this ensures the 3D plot shows)
+# Set backend for PyCharm (ensures 3D plot shows)
 matplotlib.use('TkAgg')
 
 # Function to load the transformed JSON data
@@ -34,26 +34,69 @@ for depth in well_depths:
         well_clusters.append('C')  # Cluster C: > 247 m
 
 # Function to interpolate and plot SWL as a surface
-def plot_swl_surface(ax, lons, lats, swl, title, cluster_label):
+def plot_swl_surface(fig, ax, lons, lats, swl, title, cluster_label):
     # Remove invalid (None or zero) SWL values
-    valid_indices = np.where((swl > 0) & (swl != None))
+    valid_indices = np.where((swl > 0) & (swl != None) & (lons != None) & (lats != None))
     lons, lats, swl = lons[valid_indices], lats[valid_indices], swl[valid_indices]
+
+    if len(lons) == 0 or len(lats) == 0 or len(swl) == 0:
+        print(f"No valid data for {title} (Cluster {cluster_label}).")
+        return
 
     # Create grid for interpolation
     grid_lon, grid_lat = np.meshgrid(
-        np.linspace(min(longs), max(longs), 50),  # Use global longs
-        np.linspace(min(lats), max(lats), 50)     # Use global lats
+        np.linspace(min(longs), max(longs), 50),
+        np.linspace(min(lats), max(lats), 50)
     )
 
     # Interpolate SWL data to grid
     grid_swl = griddata((lons, lats), swl, (grid_lon, grid_lat), method='cubic')
 
-    # Plot the interpolated surface
-    ax.plot_surface(grid_lon, grid_lat, grid_swl, cmap='viridis', alpha=0.6)
+    # Reverse the colormap and plot the interpolated surface
+    surf = ax.plot_surface(grid_lon, grid_lat, grid_swl, cmap='viridis_r', alpha=0.6)
     ax.set_title(f'SWL - {title} (Cluster {cluster_label})')
 
     # Set z-axis label
     ax.set_zlabel('SWL (m)')
+
+    # Add a color bar to display SWL values on the side
+    fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10, label='SWL (m)')
+
+# Function to plot interpolated elevation data using brown palette
+def plot_elevation_surface(fig, ax, lons, lats, elevations):
+    # Remove invalid (None or zero) Elevation values
+    valid_indices = np.where((elevations != None) & (lons != None) & (lats != None))
+    lons, lats, elevations = lons[valid_indices], lats[valid_indices], elevations[valid_indices]
+
+    if len(lons) == 0 or len(lats) == 0 or len(elevations) == 0:
+        print("No valid elevation data.")
+        return
+
+    # Create grid for interpolation
+    grid_lon, grid_lat = np.meshgrid(
+        np.linspace(min(longs), max(longs), 50),
+        np.linspace(min(lats), max(lats), 50)
+    )
+
+    # Interpolate elevation data to grid
+    grid_elevation = griddata((lons, lats), elevations, (grid_lon, grid_lat), method='cubic')
+
+    # Plot the interpolated elevation surface using a brown colormap
+    surf = ax.plot_surface(grid_lon, grid_lat, grid_elevation, cmap='copper', alpha=0.5)
+    ax.set_title('Interpolated Elevation Data')
+
+    # Add a color bar for elevation
+    fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10, label='Elevation (masl)')
+
+# Function to plot rings around the well at fracture depths
+def plot_fracture_rings(ax, lon, lat, fracture_elevation, ring_radius, color):
+    # Create a ring using parametric equations for a circle
+    theta = np.linspace(0, 2 * np.pi, 100)
+    x_ring = lon + ring_radius * np.cos(theta)  # Longitude
+    y_ring = lat + ring_radius * np.sin(theta)  # Latitude
+    z_ring = np.full_like(theta, fracture_elevation)  # Fracture depth (elevation)
+
+    ax.plot(x_ring, y_ring, z_ring, color=color, linewidth=2)
 
 # Function to create and save individual plots for each cluster and year
 def plot_swl_cluster(cluster_label, year, save_name):
@@ -87,20 +130,33 @@ def plot_swl_cluster(cluster_label, year, save_name):
     lons, lats_filtered, swl_year = np.array(lons), np.array(lats_filtered), np.array(swl_year)
 
     # Create a new figure for SWL plotting
-    fig = plt.figure(figsize=(10, 7))
+    fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
 
     # Plot interpolated SWL for the given year
-    plot_swl_surface(ax, lons, lats_filtered, swl_year, f'SWL {year}', cluster_label)
+    plot_swl_surface(fig, ax, lons, lats_filtered, swl_year, f'SWL {year}', cluster_label)
 
-    # Plot wells as grey cylinders
+    # Plot interpolated elevation surface in brown palette
+    plot_elevation_surface(fig, ax, lons, lats_filtered, elevations)
+
+    # Plot wells as grey cylinders and fractures
     for i in range(len(lons)):
         ax.plot([lons[i], lons[i]], [lats_filtered[i], lats_filtered[i]], [elevations[i], depths[i]], color='gray', linewidth=2)
+
+        # Plot dry fractures as brown rings around the well with a small radius
+        for fracture_depth in data_list[i]['Dry_Fractures']:
+            fracture_elevation = elevations[i] - fracture_depth
+            plot_fracture_rings(ax, lons[i], lats_filtered[i], fracture_elevation, ring_radius=0.0001, color='brown')  # Reduced ring_radius
+
+        # Plot yielding fractures as green rings around the well with a small radius
+        for fracture_depth in data_list[i]['Yielding_Fractures']:
+            fracture_elevation = elevations[i] - fracture_depth
+            plot_fracture_rings(ax, lons[i], lats_filtered[i], fracture_elevation, ring_radius=0.0001, color='green')  # Reduced ring_radius
 
     # Set labels and limits
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
-    ax.set_zlabel('SWL (m)')
+    ax.set_zlabel('Elevation (masl)')
     ax.invert_zaxis()
     ax.set_xlim(min(longs), max(longs))
     ax.set_ylim(min(lats), max(lats))
