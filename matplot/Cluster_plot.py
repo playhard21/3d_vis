@@ -5,6 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 import matplotlib
 
+
 # Set backend for PyCharm (ensures 3D plot shows)
 matplotlib.use('TkAgg')
 
@@ -62,32 +63,6 @@ def plot_swl_surface(fig, ax, lons, lats, swl, title, cluster_label):
     # Add a color bar to display SWL values on the side
     fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10, label='SWL (m)')
 
-# Function to plot interpolated elevation data using brown palette
-def plot_elevation_surface(fig, ax, lons, lats, elevations):
-    # Remove invalid (None or zero) Elevation values
-    valid_indices = np.where((elevations != None) & (lons != None) & (lats != None))
-    lons, lats, elevations = lons[valid_indices], lats[valid_indices], elevations[valid_indices]
-
-    if len(lons) == 0 or len(lats) == 0 or len(elevations) == 0:
-        print("No valid elevation data.")
-        return
-
-    # Create grid for interpolation
-    grid_lon, grid_lat = np.meshgrid(
-        np.linspace(min(longs), max(longs), 50),
-        np.linspace(min(lats), max(lats), 50)
-    )
-
-    # Interpolate elevation data to grid
-    grid_elevation = griddata((lons, lats), elevations, (grid_lon, grid_lat), method='cubic')
-
-    # Plot the interpolated elevation surface using a brown colormap
-    surf = ax.plot_surface(grid_lon, grid_lat, grid_elevation, cmap='copper', alpha=0.5)
-    ax.set_title('Interpolated Elevation Data')
-
-    # Add a color bar for elevation
-    fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10, label='Elevation (masl)')
-
 # Function to plot rings around the well at fracture depths
 def plot_fracture_rings(ax, lon, lat, fracture_elevation, ring_radius, color):
     # Create a ring using parametric equations for a circle
@@ -135,9 +110,6 @@ def plot_swl_cluster(cluster_label, year, save_name):
 
     # Plot interpolated SWL for the given year
     plot_swl_surface(fig, ax, lons, lats_filtered, swl_year, f'SWL {year}', cluster_label)
-
-    # Plot interpolated elevation surface in brown palette
-    plot_elevation_surface(fig, ax, lons, lats_filtered, elevations)
 
     # Plot wells as grey cylinders and fractures
     for i in range(len(lons)):
